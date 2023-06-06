@@ -30,9 +30,13 @@ class PCAAnalyzer():
     _minAge: float = 2.0
     _maxAge: float = 80.0
 
+    _thoraxVertexIds: list[int]
+
     _genders: np.ndarray
     _ages: np.ndarray
     _obesity: np.ndarray
+
+    _phenotypeParameters: np.ndarray
 
     _eigenvectors: np.ndarray
     _eigenvalues: np.ndarray
@@ -45,7 +49,7 @@ class PCAAnalyzer():
     _mesh: bpy.types.Object
     
 
-    def __init__(self, mesh: bpy.types.Object, age_division: int=7, obesity_division: int=5) -> None:
+    def __init__(self, mesh: bpy.types.Object, *, age_division: int=7, obesity_division: int=5) -> None:
         self._mesh = mesh
         self._genders = np.linspace(0.0, 1.0, 3)
         self._ages = np.linspace(0.0, 1.0, age_division)
@@ -137,6 +141,9 @@ class PCAAnalyzer():
         for gender, age, obesity in values:
             vertices: np.ndarray = self._get_vertexgroup_coordinates(C, human, thorax_group, gender, age, obesity).flatten()
             X.append(vertices)
+        
+        self._thoraxVertexIds = thorax_group.vertices
+        self._phenotypeParameters = values
 
         X = np.array(X)
         mu = self._pca_analyzer(X)
@@ -149,7 +156,9 @@ class PCAAnalyzer():
             'mu':self._mu, 
             'X':self._X,
             'XMinusMu':self._XMinusMu, 
-            'transformed':self._transformed
+            'transformed': self._transformed,
+            'phenotypeParameters':self._phenotypeParameters,
+            'vertexIds':self._thoraxVertexIds
             }) 
     
 
@@ -161,6 +170,6 @@ if __name__ == '__main__':
         print('No MakeHuman template available. Ensure to add the template under the name "Human" first')
         sys.exit(0)
 
-    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(human)
+    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(human, obesity_division=5)
     pcaAnalyzer.evaluate()
     pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
