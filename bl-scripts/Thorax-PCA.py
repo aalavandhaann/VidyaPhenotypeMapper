@@ -10,28 +10,36 @@ from sklearn.decomposition import PCA as sklearnPCA
 
 class VertexGroup():
     vertices: list = []
+    faces: list[list[int]] = []
     count: int = 0
+    facescount: int = 0
     name: str = None
 
     def __init__(self) -> None:
         self.vertices = []
+        self.faces = []
         self.count = 0
 
     def addVertexIndex(self, index: int)->None:
         self.vertices.append(index)
         self.count = len(self.vertices)
+    
+    def addFaceIndices(self, indices: list[list])->None:
+        self.faces.append(indices)
+        self.facescount = len(self.faces)
 
     def __repr__(self) -> str:
         return self.__str__()
     
     def __str__(self) -> str:
-        return f'Name: {self.name}, Count: #{self.count}'
+        return f'Name: {self.name}, Count: #{self.count}, Faces: #{self.faces}'
 
 class PCAAnalyzer():
     _minAge: float = 2.0
     _maxAge: float = 80.0
 
     _thoraxVertexIds: list[int]
+    _thoraxFaceIndices: list[list[int]]
 
     _genders: np.ndarray
     _ages: np.ndarray
@@ -49,15 +57,17 @@ class PCAAnalyzer():
 
 
     _mesh: bpy.types.Object
+    _context: bpy.types.Context
     _thorax_group: VertexGroup
     
 
-    def __init__(self, mesh: bpy.types.Object, *, age_division: int=7, obesity_division: int=5) -> None:
+    def __init__(self, context: bpy.types.Context, mesh: bpy.types.Object, *, age_division: int=7, obesity_division: int=5) -> None:
+        self._context = context
         self._mesh = mesh
         self._genders = np.linspace(0.0, 1.0, 3)
         self._ages = np.linspace(0.0, 1.0, age_division)
         self._obesity = np.linspace(0.0, 1.0, obesity_division)
-        self._thorax_group = self._create_vertex_group_table(human, ['Thorax']).get('Thorax')
+        self._thorax_group = self._create_vertex_group_table(self._context, human, ['Thorax']).get('Thorax')
 
     
     def _get_evaluated_mesh(self, context: bpy.types.Context, mesh: bpy.types.Object)->bpy.types.Object:
@@ -82,7 +92,31 @@ class PCAAnalyzer():
 
         return vertices
 
-    def _create_vertex_group_table(self, mesh: bpy.types.Object, for_vertex_group_names: list[str] = []) -> dict:
+    def _create_vertex_group_table(self, context: bpy.types.Context, mesh: bpy.types.Object, for_vertex_group_names: list[str] = []) -> dict:
+        def getFaces(mesh: bpy.types.Object, vertexIds: list[int])->list[list[int]]:
+            faces = []
+            bpy.ops.object.select_all(action="DESELECT")
+            context.view_layer.objects.active = mesh
+            mesh.select_set(True)
+            bpy.ops.object.mode_set(mode='EDIT')
+
+            me = mesh.data
+            bm = bmesh.from_edit_mesh(me)
+            bm.verts.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            bpy.ops.mesh.select_all(action="DESELECT")
+
+            for vid in vertexIds:
+                bm.verts[vid].select = True
+
+            C.tool_settings.mesh_select_mode = (True, True, True)
+            for f in bm.faces:
+                if(f.select):
+                    faces.append([v.index for v in f.verts])
+            bm.free()
+            bpy.ops.object.mode_set(mode='OBJECT')
+            return faces
+        
         table: dict = {}    
         for_vertex_groups: list = []
         if(not len(for_vertex_group_names)):
@@ -101,6 +135,11 @@ class PCAAnalyzer():
                     weight = vg.weight(v.index)
                     if(weight > (1.0 - 1e-2)):
                         vgroup.addVertexIndex(v.index)
+            
+            faces = getFaces(mesh, vgroup.vertices)
+            print('FACES ', faces)
+            for facevertices in faces:
+                vgroup.addFaceIndices(facevertices)
             table[vg.name] = vgroup
         return table
     
@@ -144,10 +183,11 @@ class PCAAnalyzer():
 
         thorax_group: VertexGroup = self._thorax_group#self._create_vertex_group_table(human, ['Thorax']).get('Thorax')
         for gender, age, obesity in values:
-            vertices: np.ndarray = self._get_vertexgroup_coordinates(C, human, thorax_group, gender, age, obesity).flatten()
+            vertices: np.ndarray = self._get_vertexgroup_coordinates(self._context, human, thorax_group, gender, age, obesity).flatten()
             X.append(vertices)
         
         self._thoraxVertexIds = thorax_group.vertices
+        self._thoraxFaceIndices = thorax_group.faces
         self._phenotypeParameters = values
 
         X = np.array(X)
@@ -164,7 +204,8 @@ class PCAAnalyzer():
             'XMinusMu':self._XMinusMu, 
             'transformed': self._transformed,
             'phenotypeParameters':self._phenotypeParameters,
-            'vertexIds':self._thoraxVertexIds
+            'vertexIds':self._thoraxVertexIds,
+            'faceIndices': self._thoraxFaceIndices
             }) 
     
     @property
@@ -174,27 +215,17 @@ class PCAAnalyzer():
 if __name__ == '__main__':
     C: bpy.types.Context = bpy.context
     human: bpy.types.Object = C.view_layer.objects.get('Human', None)
-    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(human, obesity_division=5)
-    # pcaAnalyzer.evaluate()
-    # pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
-    
-    bpy.ops.object.mode_set(mode='EDIT')
-    me = human.data
-    bm = bmesh.from_edit_mesh(me)
-    bm.verts.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-    bpy.ops.mesh.select_all(action="DESELECT")
-    for vid in pcaAnalyzer.thorax_group.vertices:
-        bm.verts[vid].select = True
-    C.tool_settings.mesh_select_mode = (True, False, True)
-    for f in bm.faces:
-        if(f.select):
-            print(f.index, ' is selected')
-    bm.free()
-    bpy.ops.object.mode_set(mode='OBJECT')
+
     if(not human):
         print('No MakeHuman template available. Ensure to add the template under the name "Human" first')
-        sys.exit(0)      
+        sys.exit(0)   
+
+
+    # pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=5)
+    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=3, age_division=3)
+    pcaAnalyzer.evaluate()
+    pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
+       
         
 
     

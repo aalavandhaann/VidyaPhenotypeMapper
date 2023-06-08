@@ -1,10 +1,11 @@
-import bpy
+import bpy, bmesh
+from mathutils import Vector
 import pathlib
 
 import numpy as np
 import scipy.io as sio
 
-TEMP_DATA = {}
+from VidyaPCASynthesizer.utilities import get_cache_matrix
 
 class VidyaPCASynthesizer(bpy.types.Operator):
     bl_idname = 'vidya.pcasynthesizer'
@@ -22,35 +23,51 @@ class VidyaPCASynthesizer(bpy.types.Operator):
     
     _mean_mesh: bpy.types.Object
     
-    def _construct_mean_mesh(self, context, meandata: np.ndarray)->bpy.types.Object:
+    def _construct_mean_mesh(self, context, meanvertexpositions: np.ndarray, vertexids: list[int], faces: list[list[int]])->bpy.types.Object:
+        collection: bpy.types.Collection = bpy.data.collections.get('PCA-Collection', bpy.data.collections.new('PCA-Collection'))
         mesh_name: str = self._mat_path.stem
-        current_mean_mesh: bpy.types.Object = context.view_layer.objects.get(mesh_name, None)
-        if(not current_mean_mesh):
-            mesh_data = bpy.types.Mesh.new(mesh_name)
+        current_mesh_data: bpy.types.Mesh = bpy.data.meshes.get(mesh_name, bpy.data.meshes.new(mesh_name))
+        current_mesh: bpy.types.Object = context.view_layer.objects.get(mesh_name, bpy.data.objects.new(mesh_name, current_mesh_data))
+
+        bm = bmesh.new()        
+        bm.from_mesh(current_mesh_data)
+        bm.clear()
+
+        for i, _ in enumerate(vertexids):
+            x, y, z = meanvertexpositions[i]
+            v = bm.verts.new(Vector((x, y, z)))
+        
+        bm.verts.ensure_lookup_table()
+        print(faces)
+        for vindices in faces:
+            faceverts = [bm.verts[vertexids.index(vindex)] for vindex in vindices]
+            face = bm.faces.new(faceverts)
+            print('CREATE FACE')
+
+        bm.to_mesh(current_mesh_data)
+        bm.free()
+
+        if(not collection.objects.get(mesh_name)):
+            collection.objects.link(current_mesh)
+
+        if(not context.scene.collection.children.get(collection.name)):
+            context.scene.collection.children.link(collection) 
+        return current_mesh
             
     
     def execute(self, context):
         mat_path: pathlib.Path = pathlib.Path(bpy.path.abspath(context.scene.VIDYA_PCA_Matrix))
-        cache: dict = TEMP_DATA.get(mat_path.stem, None)
+
         self._mat_path = mat_path
-        if(not cache):
-            if(not mat_path.exists()):
-                self.report({'WARNING'}, f'The given mat file path {mat_path} does not exist')
-                return {'FINISHED'}
-            try:
-                mat_file: dict = sio.loadmat(f'{mat_path.resolve()}')
-                TEMP_DATA[mat_path.stem] = mat_file
-                cache = mat_file
-            except ValueError:
-                self.report({'WARNING'}, f'The given mat file path {mat_path} is not valid')
-                return {'FINISHED'}
-        
-        self._mat = cache
+        self._mat = get_cache_matrix(self._mat_path)
         self._eigenratios = self._mat.get('eigenratios')
         self._eigenvalues = self._mat.get('eigenvalues')
         self._eigenvectors = self._mat.get('eigenvectors')
         self._mu = self._mat.get('mu')
         self._transformed = self._mat.get('transformed')
         self._data = self._mat.get('X')
-        self._mean_mesh = self._construct_mean_mesh()
+        self._mean_mesh = self._construct_mean_mesh(context, self._mu, self._mat.get('vertexIds')[0].tolist(), self._mat.get('faceIndices').tolist())
+        self._mean_mesh.VIDYA_PCA_Data.mat_file_path = f'{self._mat_path.resolve()}'
+        self._mean_mesh.VIDYA_PCA_Data.mat_file_name = self._mat_path.stem
+        self._mean_mesh.VIDYA_PCA_Data.createSliders()
         return {'FINISHED'}
