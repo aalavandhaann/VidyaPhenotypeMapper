@@ -1,5 +1,6 @@
 # context.area: VIEW_3D
 import bpy
+import bmesh
 import sys
 import pathlib
 
@@ -40,6 +41,7 @@ class PCAAnalyzer():
 
     _eigenvectors: np.ndarray
     _eigenvalues: np.ndarray
+    _eigenratios: np.ndarray
     _transformed: np.ndarray
     _mu: np.ndarray 
     _X: np.ndarray
@@ -47,6 +49,7 @@ class PCAAnalyzer():
 
 
     _mesh: bpy.types.Object
+    _thorax_group: VertexGroup
     
 
     def __init__(self, mesh: bpy.types.Object, *, age_division: int=7, obesity_division: int=5) -> None:
@@ -54,6 +57,7 @@ class PCAAnalyzer():
         self._genders = np.linspace(0.0, 1.0, 3)
         self._ages = np.linspace(0.0, 1.0, age_division)
         self._obesity = np.linspace(0.0, 1.0, obesity_division)
+        self._thorax_group = self._create_vertex_group_table(human, ['Thorax']).get('Thorax')
 
     
     def _get_evaluated_mesh(self, context: bpy.types.Context, mesh: bpy.types.Object)->bpy.types.Object:
@@ -120,6 +124,7 @@ class PCAAnalyzer():
 
         self._eigenvalues = D
         self._eigenvectors = V.T
+        self._eigenratios = D_ratio
         self._mu = mu
         self._X = X_std.T
         self._XMinusMu = (X_std.T - mu)
@@ -137,7 +142,7 @@ class PCAAnalyzer():
         values[:, 1] = self._ages[combinations[:, 1]]
         values[:, 2] = self._obesity[combinations[:, 2]]
 
-        thorax_group: VertexGroup = self._create_vertex_group_table(human, ['Thorax']).get('Thorax')
+        thorax_group: VertexGroup = self._thorax_group#self._create_vertex_group_table(human, ['Thorax']).get('Thorax')
         for gender, age, obesity in values:
             vertices: np.ndarray = self._get_vertexgroup_coordinates(C, human, thorax_group, gender, age, obesity).flatten()
             X.append(vertices)
@@ -153,6 +158,7 @@ class PCAAnalyzer():
         sio.savemat(path, {
             'eigenvectors':self._eigenvectors, 
             'eigenvalues':self._eigenvalues, 
+            'eigenratios': self._eigenratios,
             'mu':self._mu, 
             'X':self._X,
             'XMinusMu':self._XMinusMu, 
@@ -161,15 +167,34 @@ class PCAAnalyzer():
             'vertexIds':self._thoraxVertexIds
             }) 
     
+    @property
+    def thorax_group(self) -> VertexGroup:
+        return self._thorax_group
 
 if __name__ == '__main__':
     C: bpy.types.Context = bpy.context
     human: bpy.types.Object = C.view_layer.objects.get('Human', None)
-
+    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(human, obesity_division=5)
+    # pcaAnalyzer.evaluate()
+    # pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
+    
+    bpy.ops.object.mode_set(mode='EDIT')
+    me = human.data
+    bm = bmesh.from_edit_mesh(me)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    bpy.ops.mesh.select_all(action="DESELECT")
+    for vid in pcaAnalyzer.thorax_group.vertices:
+        bm.verts[vid].select = True
+    C.tool_settings.mesh_select_mode = (True, False, True)
+    for f in bm.faces:
+        if(f.select):
+            print(f.index, ' is selected')
+    bm.free()
+    bpy.ops.object.mode_set(mode='OBJECT')
     if(not human):
         print('No MakeHuman template available. Ensure to add the template under the name "Human" first')
-        sys.exit(0)
+        sys.exit(0)      
+        
 
-    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(human, obesity_division=5)
-    pcaAnalyzer.evaluate()
-    pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
+    

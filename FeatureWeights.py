@@ -21,13 +21,14 @@ matrix: dict = sio.loadmat('./matrices/all_mats_sklearn.mat')
 
 eigenvalues: np.ndarray = matrix['eigenvalues']
 eigenvectors: np.ndarray = matrix['eigenvectors']
+eigenratios: np.ndarray = matrix['eigenratios']
 phenotypeParameters: np.ndarray = matrix['phenotypeParameters']
 transformed: np.ndarray = matrix['transformed']
 mu: np.ndarray = matrix['mu']
 K: int = eigenvalues.shape[1]
 L: int = phenotypeParameters.shape[1] + 1#3 features and it all adds up to 1 so totally 4 values. 3 for feature weights and the last value is 1;
 features_matrix: np.ndarray = np.ones((K, L))
-features_matrix[:,0:3] = phenotypeParameters[:,0:3]
+features_matrix[:,0:3] = phenotypeParameters[:K,0:3]
 
 
 M_Matrix: np.ndarray = transformed.dot(np.linalg.pinv(features_matrix.T))
@@ -41,16 +42,9 @@ delta_P = M_Matrix.dot(select_feature)
 delta_P = delta_P.T
 
 
-print(eigenvalues.shape)
-print(eigenvectors.shape)
-print(phenotypeParameters.shape)
-print(transformed.shape)
-
-print(select_feature.T)
-print(features_matrix[selection])
-
-
-print('='*80);
+# print('='*80);
 print(delta_P);
-print('='*80);
+# print('='*80);
 print(transformed[selection])
+
+print(transformed.shape)
