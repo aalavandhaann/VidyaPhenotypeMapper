@@ -14,7 +14,7 @@ def slider_update(self, context):
 class VIDYAEigenSlider(bpy.types.PropertyGroup):
     mesh_name: bpy.props.StringProperty(name="Mesh Name", description="Mesh to which this property belongs to")
     name: bpy.props.StringProperty(name="Slider Name", description="Filename (or mesh object name)")
-    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=0, max=1.0, update=slider_update, default=1.0)
+    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=0, max=1.0, update=slider_update, default=0.0)
 
 class VIDYAPCAEigenData(bpy.types.PropertyGroup):    
     mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')

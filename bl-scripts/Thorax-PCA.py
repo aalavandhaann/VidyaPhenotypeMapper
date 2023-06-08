@@ -64,7 +64,7 @@ class PCAAnalyzer():
     def __init__(self, context: bpy.types.Context, mesh: bpy.types.Object, *, age_division: int=7, obesity_division: int=5) -> None:
         self._context = context
         self._mesh = mesh
-        self._genders = np.linspace(0.0, 1.0, 3)
+        self._genders = np.linspace(0.0, 1.0, 2)
         self._ages = np.linspace(0.0, 1.0, age_division)
         self._obesity = np.linspace(0.0, 1.0, obesity_division)
         self._thorax_group = self._create_vertex_group_table(self._context, human, ['Thorax']).get('Thorax')
@@ -143,8 +143,9 @@ class PCAAnalyzer():
             table[vg.name] = vgroup
         return table
     
-    def _pca_analyzer(self, X: np.ndarray):
-        K: int = X.shape[0]
+    def _pca_analyzer(self, X: np.ndarray, K: int = 0):
+        if(not K):
+            K = X.shape[0]
         X_std: np.ndarray = X#StandardScaler().fit_transform(X)
         sklearn_pca: sklearnPCA = sklearnPCA(n_components=K)
         Y_sklearn: np.ndarray = sklearn_pca.fit_transform(X_std)
@@ -191,7 +192,7 @@ class PCAAnalyzer():
         self._phenotypeParameters = values
 
         X = np.array(X)
-        mu = self._pca_analyzer(X)
+        mu = self._pca_analyzer(X, K=values.shape[1])
         mu.shape = (int(mu.shape[0]/3), 3)
     
     def save(self, path: pathlib.Path)->None:
