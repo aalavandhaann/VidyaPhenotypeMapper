@@ -7,6 +7,19 @@ import scipy.io as sio
 
 from VidyaPCASynthesizer.utilities import get_cache_matrix
 
+class VidyaPCAPredictor(bpy.types.Operator):
+    bl_idname = 'vidya.pcapredictor'
+    bl_label = 'PCA Predictor'
+    bl_description = "Given the Sample data predict the features"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def execute(self, context):
+        mat_path: pathlib.Path = pathlib.Path(bpy.path.abspath(context.scene.VIDYA_PCA_Matrix))
+        mesh: bpy.types.Object = context.view_layer.objects.get(mat_path.stem)
+        mesh.VIDYA_PCA_Data.predict(context)
+        return {'FINISHED'}
+
 class VidyaPCASynthesizer(bpy.types.Operator):
     bl_idname = 'vidya.pcasynthesizer'
     bl_label = 'PCA Synthesizer'
@@ -38,11 +51,10 @@ class VidyaPCASynthesizer(bpy.types.Operator):
             v = bm.verts.new(Vector((x, y, z)))
         
         bm.verts.ensure_lookup_table()
-        print(faces)
+        
         for vindices in faces:
             faceverts = [bm.verts[vertexids.index(vindex)] for vindex in vindices]
             face = bm.faces.new(faceverts)
-            print('CREATE FACE')
 
         bm.to_mesh(current_mesh_data)
         bm.free()

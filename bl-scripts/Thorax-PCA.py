@@ -59,12 +59,22 @@ class PCAAnalyzer():
     _mesh: bpy.types.Object
     _context: bpy.types.Context
     _thorax_group: VertexGroup
+
+    _topology_path: pathlib.Path
     
 
-    def __init__(self, context: bpy.types.Context, mesh: bpy.types.Object, *, age_division: int=7, obesity_division: int=5) -> None:
+    def __init__(
+            self, context: bpy.types.Context, mesh: bpy.types.Object, *, 
+            gender_division: int = 3, age_division: int=7, obesity_division: int=5,
+            topology_path: pathlib.Path = pathlib.Path(bpy.path.abspath('//')).joinpath('matrices').joinpath('thorax_topology.mat')) -> None:
         self._context = context
         self._mesh = mesh
-        self._genders = np.linspace(0.0, 1.0, 2)
+        self._topology_path = topology_path
+        
+        if(not self._topology_path.exists()):
+            raise FileNotFoundError(f'Topology mat file {self._topology_path.resolve()} was not found')
+        
+        self._genders = np.linspace(0.0, 1.0, gender_division)
         self._ages = np.linspace(0.0, 1.0, age_division)
         self._obesity = np.linspace(0.0, 1.0, obesity_division)
         self._thorax_group = self._create_vertex_group_table(self._context, human, ['Thorax']).get('Thorax')
@@ -92,33 +102,15 @@ class PCAAnalyzer():
 
         return vertices
 
-    def _create_vertex_group_table(self, context: bpy.types.Context, mesh: bpy.types.Object, for_vertex_group_names: list[str] = []) -> dict:
-        def getFaces(mesh: bpy.types.Object, vertexIds: list[int])->list[list[int]]:
-            faces = []
-            bpy.ops.object.select_all(action="DESELECT")
-            context.view_layer.objects.active = mesh
-            mesh.select_set(True)
-            bpy.ops.object.mode_set(mode='EDIT')
-
-            me = mesh.data
-            bm = bmesh.from_edit_mesh(me)
-            bm.verts.ensure_lookup_table()
-            bm.faces.ensure_lookup_table()
-            bpy.ops.mesh.select_all(action="DESELECT")
-
-            for vid in vertexIds:
-                bm.verts[vid].select = True
-
-            C.tool_settings.mesh_select_mode = (True, True, True)
-            for f in bm.faces:
-                if(f.select):
-                    faces.append([v.index for v in f.verts])
-            bm.free()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            return faces
-        
+    '''
+        Ensure to save the topology information to a matrix file for all the required vertex groups i.e vertex ids and the faces/polygons they make.
+        The topolgy mat file should have [VertexGroupName].vertexIds and [VertexGroupName].faceIndices
+    '''
+    def _create_vertex_group_table(self, context: bpy.types.Context, mesh: bpy.types.Object, for_vertex_group_names: list[str] = []) -> dict:                  
         table: dict = {}    
         for_vertex_groups: list = []
+        topology_mat: dict = sio.loadmat(self._topology_path)       
+
         if(not len(for_vertex_group_names)):
             for_vertex_groups = [vg for vg in mesh.vertex_groups]
         else:
@@ -129,18 +121,34 @@ class PCAAnalyzer():
                 continue
             vgroup = VertexGroup()
             vgroup.name = vg.name
-            for v in mesh.data.vertices:
-                gids = [g.group for g in v.groups]
-                if(vg.index in gids):
-                    weight = vg.weight(v.index)
-                    if(weight > (1.0 - 1e-2)):
-                        vgroup.addVertexIndex(v.index)
+            group_vertices: list[int] = topology_mat.get(f'{vg.name}.vertexIds', np.zeros((0)))
+            group_faces: list[list[int]] = topology_mat.get(f'{vg.name}.faceIndices', np.zeros((0, 0)))
+
+            if(not group_vertices.shape[0]):
+                raise ValueError(f'The given mat file {self._topology_path} does not contain vertices information for {vg.name}')
+            if(not group_faces.shape[0]):
+                raise ValueError(f'The given mat file {self._topology_path} does not contain faces connectivity information for {vg.name}')
             
-            faces = getFaces(mesh, vgroup.vertices)
-            print('FACES ', faces)
-            for facevertices in faces:
-                vgroup.addFaceIndices(facevertices)
+            group_vertices = group_vertices[0]            
+
+            for vid in group_vertices:
+                vgroup.addVertexIndex(vid)
+            
+            for face in group_faces:
+                vgroup.addFaceIndices(face.tolist())
+
+            # for v in mesh.data.vertices:
+            #     gids = [g.group for g in v.groups]
+            #     if(vg.index in gids):
+            #         weight = vg.weight(v.index)
+            #         if(weight > (1.0 - 1e-2)):
+            #             vgroup.addVertexIndex(v.index)
+            
+            # faces = getFaces(mesh, vgroup.vertices)
+            # for facevertices in faces:
+            #     vgroup.addFaceIndices(facevertices)
             table[vg.name] = vgroup
+
         return table
     
     def _pca_analyzer(self, X: np.ndarray, K: int = 0):
@@ -192,7 +200,8 @@ class PCAAnalyzer():
         self._phenotypeParameters = values
 
         X = np.array(X)
-        mu = self._pca_analyzer(X, K=values.shape[1])
+        # mu = self._pca_analyzer(X, K=values.shape[1])
+        mu = self._pca_analyzer(X, K=9)
         mu.shape = (int(mu.shape[0]/3), 3)
     
     def save(self, path: pathlib.Path)->None:
@@ -216,6 +225,11 @@ class PCAAnalyzer():
 if __name__ == '__main__':
     C: bpy.types.Context = bpy.context
     human: bpy.types.Object = C.view_layer.objects.get('Human', None)
+    thorax_topology: pathlib.Path = pathlib.Path(bpy.path.abspath('//')).joinpath('matrices').joinpath('thorax_topology.mat')
+
+    if(not thorax_topology.exists()):
+        print('Thorax topology is needed before saving the PCA matrices')
+        sys.exit(0)   
 
     if(not human):
         print('No MakeHuman template available. Ensure to add the template under the name "Human" first')
@@ -223,7 +237,7 @@ if __name__ == '__main__':
 
 
     # pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=5)
-    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=3, age_division=3)
+    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=3, age_division=20)
     pcaAnalyzer.evaluate()
     pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
        

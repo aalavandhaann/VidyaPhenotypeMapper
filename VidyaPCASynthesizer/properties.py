@@ -3,6 +3,10 @@ import pathlib
 import numpy as np
 from VidyaPCASynthesizer.utilities import get_cache_matrix, is_matrix_loaded, load_matrix_to_cache, get_cache_matrix_name
 
+from sklearn.linear_model import LogisticRegression
+from sklearn import preprocessing
+
+
 def loadMATFile(self, context):
     bpy.ops.vidya.pcasynthesizer('EXEC_DEFAULT')
 
@@ -14,7 +18,7 @@ def slider_update(self, context):
 class VIDYAEigenSlider(bpy.types.PropertyGroup):
     mesh_name: bpy.props.StringProperty(name="Mesh Name", description="Mesh to which this property belongs to")
     name: bpy.props.StringProperty(name="Slider Name", description="Filename (or mesh object name)")
-    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=0, max=1.0, update=slider_update, default=0.0)
+    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=-1.0, max=1.0, update=slider_update, default=0.0)
 
 class VIDYAPCAEigenData(bpy.types.PropertyGroup):    
     mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')
@@ -58,16 +62,53 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
         eigen_values_vectors: np.ndarray = eigenvalues@eigenvectors
         e_vectors: np.ndarray = weights@eigen_values_vectors
         sum_e_vectors = np.sum(e_vectors, axis=0);    
-        sum_e_vectors.shape = (int(sum_e_vectors.shape[0] / 3), 3)
-
-        print(f'E: {eigen_values_vectors.shape}, χ: {weights.shape}, χ.E = {e_vectors.shape}')
-        print(eigenratios.shape)
-        print(np.sum(eigenratios.ravel()))
+        sum_e_vectors.shape = (int(sum_e_vectors.shape[0] / 3), 3)      
 
         sum_e_vectors = mu + sum_e_vectors 
 
         for i, (x, y, z) in enumerate(sum_e_vectors):
             mesh.data.vertices[i].co = (x, y, z)
+    
+    def predict(self, context):
+        mat: dict = {}
+        if(not is_matrix_loaded(self.mat_file_name)):
+            mat = load_matrix_to_cache(pathlib.Path(self.mat_file_path))
+        else:
+            mat = get_cache_matrix_name(self.mat_file_name)
+
+        mesh: bpy.types.Object = context.view_layer.objects.get(self.mat_file_name)
+        N: int = len(mesh.data.vertices)
+        vertices: list = []
+
+        for v in mesh.data.vertices:
+            vertices.extend([v.co.x, v.co.y, v.co.z])
+
+        '''
+            Equation:
+
+        '''
+        
+
+        mu: np.ndarray = mat.get('mu').flatten()
+        eigenvectors_mat: np.ndarray = mat.get('eigenvectors')
+        eigenvalues_mat: np.ndarray = mat.get('eigenvalues')
+
+        S_sum: np.array = np.diag(np.array(vertices) - mu)
+
+        lamuda_vectors: np.ndarray = eigenvectors_mat.T 
+        lamuda: np.ndarray = np.diag(np.abs(eigenvalues_mat.flatten())**0.5)
+        lamuda_product: np.ndarray = lamuda@lamuda_vectors
+        S_sum_inv: np.ndarray = np.linalg.pinv(S_sum)
+        W_inv: np.ndarray = lamuda_product@S_sum_inv
+        W_full: np.ndarray = np.linalg.pinv(W_inv) 
+        W: np.ndarray = np.sum(W_full, axis=0)    
+
+        for i, slider in enumerate(self.sliders):
+            slider.coefficient = W[i]
+
+        print(f'MATRIX SHAPES: \nS: {S_sum.shape}\nsqroot(λ).Λ: {lamuda_product.shape}\ninv(S_sum): {S_sum_inv.shape}\nW^(-1): {W_inv.shape}\nW Full: {W_full.shape}\nW: {W.shape}')
+        print(W)
+
 
 
 def register():

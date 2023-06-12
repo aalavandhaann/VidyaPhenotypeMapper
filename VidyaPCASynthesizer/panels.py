@@ -1,6 +1,6 @@
 import bpy
 
-from VidyaPCASynthesizer.operators import VidyaPCASynthesizer
+from VidyaPCASynthesizer.operators import VidyaPCASynthesizer, VidyaPCAPredictor
 
 class VIDYA_PCA_Slider_Items(bpy.types.UIList):
     bl_idname = 'VIEW3D_UL_VIDYA_PCASliderItems'
@@ -52,3 +52,6 @@ class PT_2_VidyaPCASliders(bpy.types.Panel):
             row = box.row(align=True)
             row.template_list(VIDYA_PCA_Slider_Items.bl_idname, "", mesh.VIDYA_PCA_Data,
                           'sliders', mesh.VIDYA_PCA_Data, "slider_index", rows=3, maxrows=3, type="DEFAULT")
+            
+            row = box.row(align=True)
+            row.operator(VidyaPCAPredictor.bl_idname, text='Predict')
