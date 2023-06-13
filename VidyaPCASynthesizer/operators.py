@@ -78,8 +78,14 @@ class VidyaPCASynthesizer(bpy.types.Operator):
         self._mu = self._mat.get('mu')
         self._transformed = self._mat.get('transformed')
         self._data = self._mat.get('X')
+
         self._mean_mesh = self._construct_mean_mesh(context, self._mu, self._mat.get('vertexIds')[0].tolist(), self._mat.get('faceIndices').tolist())
         self._mean_mesh.VIDYA_PCA_Data.mat_file_path = f'{self._mat_path.resolve()}'
         self._mean_mesh.VIDYA_PCA_Data.mat_file_name = self._mat_path.stem
         self._mean_mesh.VIDYA_PCA_Data.createSliders()
+
+        features: np.ndarray = self._mat.get('labels', np.zeros((0)))
+        # if(features.shape[0]):
+        #     for label in features:
+
         return {'FINISHED'}

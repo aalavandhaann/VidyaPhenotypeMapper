@@ -1,50 +1,56 @@
+import pathlib
+import tqdm
 import numpy as np
 import scipy.io as sio
+from sklearn.decomposition import PCA as sklearnPCA
 
-def synthesizeEigenVectors(eigenvectors, eigenvalues, coeffs, factor):
-
-    K = eigenvalues.shape[1]
-    sum_e_vectors = np.zeros((eigenvectors.shape[0], 1))
-
-    eigenvectors = eigenvectors.T
-    weights = np.diag(coeffs.flatten())
-    eigenvalues = np.diag(np.abs(eigenvalues.flatten())**0.5)
-
-    e_vectors = (weights@eigenvalues)@eigenvectors
-
-    sum_e_vectors = np.sum(e_vectors, axis=0);    
-    sum_e_vectors.shape = (int(sum_e_vectors.shape[0] / 3), 3);
-
-    return sum_e_vectors, e_vectors
-
-matrix: dict = sio.loadmat('./matrices/all_mats_sklearn.mat')
-
-eigenvalues: np.ndarray = matrix['eigenvalues']
-eigenvectors: np.ndarray = matrix['eigenvectors']
-eigenratios: np.ndarray = matrix['eigenratios']
-phenotypeParameters: np.ndarray = matrix['phenotypeParameters']
-transformed: np.ndarray = matrix['transformed']
-mu: np.ndarray = matrix['mu']
-K: int = eigenvalues.shape[1]
-L: int = phenotypeParameters.shape[1] + 1#3 features and it all adds up to 1 so totally 4 values. 3 for feature weights and the last value is 1;
-features_matrix: np.ndarray = np.ones((K, L))
-features_matrix[:,0:3] = phenotypeParameters[:K,0:3]
+'''
+The objective of this script is to find MF = P, given the PCA decomposition of multiple shapes (makehuman thoraxes).
+Where, 
+- P is a matrix of size M x k weights (M is the number of shapes or samples, k is the size of eigendecomposition)
+- F is a matrix of size M x h containing phenotype or human understandable parameters (again M refers to number 
+  of shapes or samples, and h refers to number of human understandable features)
+- M is a matrix that is the tranformation from F to P
+'''
 
 
-M_Matrix: np.ndarray = transformed.dot(np.linalg.pinv(features_matrix.T))
 
-selection: int = 100
-select_feature: np.ndarray = np.copy(features_matrix[selection])
-select_feature[-1] = 0.0
-select_feature.shape = (select_feature.shape[0], 1)
+def getPCAWeights(mu: np.ndarray, vertices: np.ndarray, eigenvalues_mat: np.ndarray, eigenvectors_mat: np.ndarray)->np.ndarray:
+    S_sum: np.array = np.diag(np.array(vertices) - mu)
 
-delta_P = M_Matrix.dot(select_feature)
-delta_P = delta_P.T
+    lamuda_vectors: np.ndarray = eigenvectors_mat.T 
+    lamuda: np.ndarray = np.diag(np.abs(eigenvalues_mat.flatten())**0.5)
+    lamuda_product: np.ndarray = lamuda@lamuda_vectors
+    S_sum_inv: np.ndarray = np.linalg.pinv(S_sum)
+    W_inv: np.ndarray = lamuda_product@S_sum_inv
+    W_full: np.ndarray = np.linalg.pinv(W_inv) 
+    W: np.ndarray = np.sum(W_full, axis=0) 
+
+    return W
 
 
-# print('='*80);
-print(delta_P);
-# print('='*80);
-print(transformed[selection])
+if __name__ == '__main__':
+    mat_file: pathlib.Path = pathlib.Path('matrices/all_mats_sklearn.mat')
+    mat: dict = sio.loadmat(f'{mat_file}')
 
-print(transformed.shape)
+    original_data: np.ndarray = mat.get('X').T
+    transformed: np.ndarray = mat.get('transformed')
+    phenotypes_data: np.ndarray = mat.get('phenotypeParameters')
+    mu: np.ndarray = mat.get('mu').flatten()
+    eigenvalues_mat: np.ndarray = mat.get('eigenvalues')
+    eigenvectors_mat: np.ndarray = mat.get('eigenvectors')
+    
+    F: np.ndarray = phenotypes_data.T
+    P: np.ndarray = np.zeros((original_data.shape[0], eigenvalues_mat.shape[1]))
+
+    for i, (gender, age, obesity) in tqdm.tqdm(enumerate(phenotypes_data), dynamic_ncols=True, desc='Computing PCA Weights:', colour='green'):
+        vertices: np.ndarray = original_data[i]
+        W: np.ndarray = getPCAWeights(mu, vertices, eigenvalues_mat, eigenvectors_mat)
+        P[i] = W
+
+    M = P@np.linalg.pinv(F)
+    mat['M'] = M
+    mat['P'] = P
+    mat['F'] = F
+    mat['labels'] = ['gender', 'age', 'obesity']
+    sio.savemat(f'{mat_file}', mat)

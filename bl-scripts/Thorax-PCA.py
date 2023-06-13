@@ -38,6 +38,8 @@ class PCAAnalyzer():
     _minAge: float = 2.0
     _maxAge: float = 80.0
 
+    _K: int
+
     _thoraxVertexIds: list[int]
     _thoraxFaceIndices: list[list[int]]
 
@@ -62,9 +64,9 @@ class PCAAnalyzer():
 
     _topology_path: pathlib.Path
     
-
     def __init__(
             self, context: bpy.types.Context, mesh: bpy.types.Object, *, 
+            K = 9, 
             gender_division: int = 3, age_division: int=7, obesity_division: int=5,
             topology_path: pathlib.Path = pathlib.Path(bpy.path.abspath('//')).joinpath('matrices').joinpath('thorax_topology.mat')) -> None:
         self._context = context
@@ -74,10 +76,11 @@ class PCAAnalyzer():
         if(not self._topology_path.exists()):
             raise FileNotFoundError(f'Topology mat file {self._topology_path.resolve()} was not found')
         
+        self._K = K
         self._genders = np.linspace(0.0, 1.0, gender_division)
         self._ages = np.linspace(0.0, 1.0, age_division)
         self._obesity = np.linspace(0.0, 1.0, obesity_division)
-        self._thorax_group = self._create_vertex_group_table(self._context, human, ['Thorax']).get('Thorax')
+        self._thorax_group = self._create_vertex_group_table(self._context, human, ['Thorax']).get('Thorax')      
 
     
     def _get_evaluated_mesh(self, context: bpy.types.Context, mesh: bpy.types.Object)->bpy.types.Object:
@@ -164,6 +167,7 @@ class PCAAnalyzer():
         D_ratio: np.ndarray = sklearn_pca.explained_variance_ratio_
         V: np.ndarray = sklearn_pca.components_
         print('*'*40)
+        print(f'PCA SIZE: {K} ')
         print('DATA ENTRIES SHAPE ::: ', X.shape)
         print('MEAN MATRIX SHAPE ::: ', mu.shape)
         print('EIGEN VALUES SHAPE ::: ', D.shape)
@@ -195,13 +199,16 @@ class PCAAnalyzer():
             vertices: np.ndarray = self._get_vertexgroup_coordinates(self._context, human, thorax_group, gender, age, obesity).flatten()
             X.append(vertices)
         
+        if(self._K == -1):
+            self._K = values.shape[0]
+
         self._thoraxVertexIds = thorax_group.vertices
         self._thoraxFaceIndices = thorax_group.faces
         self._phenotypeParameters = values
 
         X = np.array(X)
         # mu = self._pca_analyzer(X, K=values.shape[1])
-        mu = self._pca_analyzer(X, K=9)
+        mu = self._pca_analyzer(X, K=self._K)
         mu.shape = (int(mu.shape[0]/3), 3)
     
     def save(self, path: pathlib.Path)->None:
@@ -237,7 +244,7 @@ if __name__ == '__main__':
 
 
     # pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=5)
-    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=3, age_division=20)
+    pcaAnalyzer: PCAAnalyzer = PCAAnalyzer(C, human, obesity_division=3, age_division=20, K = -1)    
     pcaAnalyzer.evaluate()
     pcaAnalyzer.save(bpy.path.abspath('//matrices/all_mats_sklearn.mat'))
        

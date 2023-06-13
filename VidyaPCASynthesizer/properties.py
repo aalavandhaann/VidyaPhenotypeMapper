@@ -10,15 +10,25 @@ from sklearn import preprocessing
 def loadMATFile(self, context):
     bpy.ops.vidya.pcasynthesizer('EXEC_DEFAULT')
 
-def slider_update(self, context):
+def eigen_slider_update(self, context):
     mesh: bpy.types.Object = context.view_layer.objects.get(self.mesh_name)
     if(mesh):
         mesh.VIDYA_PCA_Data.update(context)
 
+def feature_slider_update(self, context):
+    mesh: bpy.types.Object = context.view_layer.objects.get(self.mesh_name)
+    if(mesh):
+        mesh.VIDYA_PCA_Features.update(context)
+
 class VIDYAEigenSlider(bpy.types.PropertyGroup):
     mesh_name: bpy.props.StringProperty(name="Mesh Name", description="Mesh to which this property belongs to")
     name: bpy.props.StringProperty(name="Slider Name", description="Filename (or mesh object name)")
-    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=-1.0, max=1.0, update=slider_update, default=0.0)
+    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=-10.0, max=10.0, update=eigen_slider_update, default=0.0)
+
+class VIDYAFeatureSlider(bpy.types.PropertyGroup):
+    mesh_name: bpy.props.StringProperty(name="Mesh Name", description="Mesh to which this property belongs to")
+    name: bpy.props.StringProperty(name="Slider Name", description="Filename (or mesh object name)")
+    coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the feature", subtype='FACTOR', min=0.0, max=1.0, update=feature_slider_update, default=0.0)
 
 class VIDYAPCAEigenData(bpy.types.PropertyGroup):    
     mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')
@@ -26,11 +36,26 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
     sliders: bpy.props.CollectionProperty(type=VIDYAEigenSlider)
     slider_index: bpy.props.IntProperty(name='Current Slider Index', description="Slider index to maintain selection in UIList", default=0)
 
+    def _get_evaluated_mesh(self, context: bpy.types.Context, mesh: bpy.types.Object)->bpy.types.Object:
+        depsgraph = context.evaluated_depsgraph_get()
+        depsgraph.update()        
+        #Get the evaluated mesh based on the depsgraph for correct positions
+        mesh = mesh.evaluated_get(depsgraph)
+        return mesh
+
+    def _get_makehuman_mesh(self, context)->bpy.types.Object:
+        for o in context.view_layer.objects:
+            if(o.type == 'MESH'):
+                if(o.MPFB_HUM_is_human_project):
+                    return o
+
+        return None
+
     def createSliders(self)->None:
         self.sliders.clear()
         mat_dict: dict = get_cache_matrix(pathlib.Path(self.mat_file_path))
         eigen_values: np.ndarray = mat_dict.get('eigenvalues')
-        
+        print('EIGEN VALUES SIZE ', eigen_values.shape)
         for i in range(eigen_values.shape[1]):
             slider = self.sliders.add()
             slider.mesh_name = self.mat_file_name
@@ -71,49 +96,85 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
     
     def predict(self, context):
         mat: dict = {}
+        vertices_pointer: list = []
+        vertices: list[list[float]] = []
+        N: int = 0
         if(not is_matrix_loaded(self.mat_file_name)):
             mat = load_matrix_to_cache(pathlib.Path(self.mat_file_path))
         else:
             mat = get_cache_matrix_name(self.mat_file_name)
 
-        mesh: bpy.types.Object = context.view_layer.objects.get(self.mat_file_name)
-        N: int = len(mesh.data.vertices)
-        vertices: list = []
-
-        for v in mesh.data.vertices:
-            vertices.extend([v.co.x, v.co.y, v.co.z])
-
-        '''
-            Equation:
-
-        '''
-        
-
         mu: np.ndarray = mat.get('mu').flatten()
         eigenvectors_mat: np.ndarray = mat.get('eigenvectors')
         eigenvalues_mat: np.ndarray = mat.get('eigenvalues')
 
-        S_sum: np.array = np.diag(np.array(vertices) - mu)
+        mesh: bpy.types.Object = self._get_makehuman_mesh(context)
+        if(mesh):
+            mesh = self._get_evaluated_mesh(context, mesh)
+            vertexIds: list[int] = mat.get('vertexIds').flatten().tolist()
+            for vid in vertexIds:
+                vertices_pointer.append(mesh.data.vertices[vid])
 
+        else:
+            mesh = context.view_layer.objects.get(self.mat_file_name)
+            for v in mesh.data.vertices:
+                vertices_pointer.append(v)
+
+        N = len(vertices_pointer)
+        for v in vertices_pointer:
+            vertices.append([v.co.x, v.co.y, v.co.z])
+        
+        vertices = np.array(vertices).flatten()
+
+        S_sum: np.array = np.diag(vertices - mu)
         lamuda_vectors: np.ndarray = eigenvectors_mat.T 
         lamuda: np.ndarray = np.diag(np.abs(eigenvalues_mat.flatten())**0.5)
         lamuda_product: np.ndarray = lamuda@lamuda_vectors
+
         S_sum_inv: np.ndarray = np.linalg.pinv(S_sum)
+
         W_inv: np.ndarray = lamuda_product@S_sum_inv
+# 
         W_full: np.ndarray = np.linalg.pinv(W_inv) 
+
         W: np.ndarray = np.sum(W_full, axis=0)    
 
         for i, slider in enumerate(self.sliders):
             slider.coefficient = W[i]
 
         print(f'MATRIX SHAPES: \nS: {S_sum.shape}\nsqroot(λ).Λ: {lamuda_product.shape}\ninv(S_sum): {S_sum_inv.shape}\nW^(-1): {W_inv.shape}\nW Full: {W_full.shape}\nW: {W.shape}')
-        print(W)
+        # print(W)
 
+class VIDYAPCAFeatureData(bpy.types.PropertyGroup):    
+    mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')
+    mat_file_path: bpy.props.StringProperty(name='Matrix File Path', description="Location of the matrix file", default='//', subtype="FILE_PATH")
+    sliders: bpy.props.CollectionProperty(type=VIDYAFeatureSlider)
+    slider_index: bpy.props.IntProperty(name='Current Slider Index', description="Slider index to maintain selection in UIList", default=0)
 
+    def createSliders(self)->None:
+        self.sliders.clear()
+        mat_dict: dict = get_cache_matrix(pathlib.Path(self.mat_file_path))
+        features: dict = mat_dict.get('labels')
+
+        for label in features:
+            slider = self.sliders.add()
+            slider.mesh_name = self.mat_file_name
+            slider.name = label.upper()
+    
+    def update(self, context)->None:
+        mat: dict = {}
+        if(not is_matrix_loaded(self.mat_file_name)):
+            mat = load_matrix_to_cache(pathlib.Path(self.mat_file_path))
+        else:
+            mat = get_cache_matrix_name(self.mat_file_name)        
+        
 
 def register():
     bpy.types.Scene.VIDYA_PCA_Matrix = bpy.props.StringProperty(name="Library Blend file path", default="./mat.mat", description="Path to the linked library Blend file", subtype="FILE_PATH", update=loadMATFile)
     bpy.types.Object.VIDYA_PCA_Data = bpy.props.PointerProperty(name="PCA Data", description="Pointer to the PCA Data", type=VIDYAPCAEigenData)
-
+    bpy.types.Object.VIDYA_PCA_Features = bpy.props.PointerProperty(name="PCA Features", description="Pointer to the PCA Features", type=VIDYAPCAFeatureData)
+    
 def unregister():
     bpy.props.RemoveProperty(bpy.types.Scene, attr='VIDYA_PCA_Matrix')
+    # bpy.props.RemoveProperty(bpy.types.Scene, attr='VIDYA_PCA_Data')
+    # bpy.props.RemoveProperty(bpy.types.Scene, attr='VIDYA_PCA_Features')
