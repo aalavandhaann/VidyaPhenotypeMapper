@@ -12,23 +12,25 @@ def loadMATFile(self, context):
 
 def eigen_slider_update(self, context):
     mesh: bpy.types.Object = context.view_layer.objects.get(self.mesh_name)
-    if(mesh):
+    if(mesh and not self.soft_update):
         mesh.VIDYA_PCA_Data.update(context)
 
 def feature_slider_update(self, context):
     mesh: bpy.types.Object = context.view_layer.objects.get(self.mesh_name)
-    if(mesh):
+    if(mesh and not self.soft_update):
         mesh.VIDYA_PCA_Features.update(context)
 
 class VIDYAEigenSlider(bpy.types.PropertyGroup):
     mesh_name: bpy.props.StringProperty(name="Mesh Name", description="Mesh to which this property belongs to")
     name: bpy.props.StringProperty(name="Slider Name", description="Filename (or mesh object name)")
     coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the eigen value", subtype='FACTOR', min=-10.0, max=10.0, update=eigen_slider_update, default=0.0)
+    soft_update: bpy.props.BoolProperty(name='Soft Update', description="To control speed of sliders", default=False)
 
 class VIDYAFeatureSlider(bpy.types.PropertyGroup):
     mesh_name: bpy.props.StringProperty(name="Mesh Name", description="Mesh to which this property belongs to")
     name: bpy.props.StringProperty(name="Slider Name", description="Filename (or mesh object name)")
     coefficient: bpy.props.FloatProperty(name='Coefficient', description="Coefficient of the feature", subtype='FACTOR', min=0.0, max=1.0, update=feature_slider_update, default=0.0)
+    soft_update: bpy.props.BoolProperty(name='Soft Update', description="To control speed of sliders", default=False)
 
 class VIDYAPCAEigenData(bpy.types.PropertyGroup):    
     mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')
@@ -52,10 +54,11 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
         return None
 
     def createSliders(self)->None:
-        self.sliders.clear()
+        
         mat_dict: dict = get_cache_matrix(pathlib.Path(self.mat_file_path))
         eigen_values: np.ndarray = mat_dict.get('eigenvalues')
-        print('EIGEN VALUES SIZE ', eigen_values.shape)
+
+        self.sliders.clear()
         for i in range(eigen_values.shape[1]):
             slider = self.sliders.add()
             slider.mesh_name = self.mat_file_name
@@ -143,30 +146,87 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
             slider.coefficient = W[i]
 
         print(f'MATRIX SHAPES: \nS: {S_sum.shape}\nsqroot(λ).Λ: {lamuda_product.shape}\ninv(S_sum): {S_sum_inv.shape}\nW^(-1): {W_inv.shape}\nW Full: {W_full.shape}\nW: {W.shape}')
-        # print(W)
+        print(W)
 
 class VIDYAPCAFeatureData(bpy.types.PropertyGroup):    
     mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')
     mat_file_path: bpy.props.StringProperty(name='Matrix File Path', description="Location of the matrix file", default='//', subtype="FILE_PATH")
     sliders: bpy.props.CollectionProperty(type=VIDYAFeatureSlider)
     slider_index: bpy.props.IntProperty(name='Current Slider Index', description="Slider index to maintain selection in UIList", default=0)
+    
+    def _get_evaluated_mesh(self, context: bpy.types.Context, mesh: bpy.types.Object)->bpy.types.Object:
+        depsgraph = context.evaluated_depsgraph_get()
+        depsgraph.update()        
+        #Get the evaluated mesh based on the depsgraph for correct positions
+        mesh = mesh.evaluated_get(depsgraph)
+        return mesh
 
+    def _get_makehuman_mesh(self, context)->bpy.types.Object:
+        for o in context.view_layer.objects:
+            if(o.type == 'MESH'):
+                if(o.MPFB_HUM_is_human_project):
+                    return o
+                
     def createSliders(self)->None:
-        self.sliders.clear()
+        
         mat_dict: dict = get_cache_matrix(pathlib.Path(self.mat_file_path))
-        features: dict = mat_dict.get('labels')
+        features: dict = mat_dict.get('labels', np.zeros((0, 0)))
 
+        self.sliders.clear()
         for label in features:
             slider = self.sliders.add()
             slider.mesh_name = self.mat_file_name
             slider.name = label.upper()
     
     def update(self, context)->None:
+        scene: bpy.types.Scene = context.scene
         mat: dict = {}
         if(not is_matrix_loaded(self.mat_file_name)):
             mat = load_matrix_to_cache(pathlib.Path(self.mat_file_path))
         else:
             mat = get_cache_matrix_name(self.mat_file_name)        
+
+        import scipy.io as sio
+        matt: dict = sio.loadmat(f'{pathlib.Path(self.mat_file_path)}')
+
+        F: np.ndarray = np.zeros((len(self.sliders)+1, 1))
+        M: np.ndarray = mat.get('M')
+        P_original: np.ndarray = mat.get('P')
+        sliders: list[VIDYAFeatureSlider] = self.sliders
+
+        F[-1] = 1.0
+        
+        for i, slider in enumerate(sliders):            
+            F[i, 0] = slider.coefficient    
+
+        P:np.ndarray = (M@F).flatten()
+
+        mk_mesh: bpy.types.Object = self._get_makehuman_mesh(context)
+        pca_mesh: bpy.types.Object = context.view_layer.objects.get(self.mat_file_name)
+
+        pca_sliders: list[VIDYAEigenSlider] = pca_mesh.VIDYA_PCA_Data.sliders
+        
+        for i, pca_slider in enumerate(pca_sliders):
+            pca_slider.soft_update = True
+            pca_slider.coefficient =  P[i]
+            pca_slider.soft_update = False
+
+        pca_mesh.VIDYA_PCA_Data.update(context)
+
+        # bpy.ops.object.select_all(action="DESELECT")
+
+        # mk_mesh.select_set(True)
+        # context.view_layer.objects.active = mk_mesh
+        # scene.mpfb_macropanel_gender = F[0, 0]        
+        # scene.mpfb_macropanel_age = F[1, 0]
+        # scene.mpfb_macropanel_weight = F[2, 0]
+        # scene.mpfb_macropanel_height = F[3, 0]
+        # scene.mpfb_macropanel_muscle = F[4, 0]
+        # scene.mpfb_macropanel_proportions = 0.5
+        
+        # bpy.ops.object.select_all(action="DESELECT")
+        # pca_mesh.select_set(True)
+        # context.view_layer.objects.active = pca_mesh
         
 
 def register():

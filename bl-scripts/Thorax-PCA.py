@@ -46,6 +46,8 @@ class PCAAnalyzer():
     _genders: np.ndarray
     _ages: np.ndarray
     _obesity: np.ndarray
+    _heights: np.ndarray
+    _muscularities: np.ndarray
 
     _phenotypeParameters: np.ndarray
 
@@ -67,7 +69,8 @@ class PCAAnalyzer():
     def __init__(
             self, context: bpy.types.Context, mesh: bpy.types.Object, *, 
             K = 9, 
-            gender_division: int = 3, age_division: int=7, obesity_division: int=5,
+            gender_division: int = 3, age_division: int=7, 
+            obesity_division: int=3, heights_division: int = 3, muscularity_division: int = 3,
             topology_path: pathlib.Path = pathlib.Path(bpy.path.abspath('//')).joinpath('matrices').joinpath('thorax_topology.mat')) -> None:
         self._context = context
         self._mesh = mesh
@@ -77,9 +80,14 @@ class PCAAnalyzer():
             raise FileNotFoundError(f'Topology mat file {self._topology_path.resolve()} was not found')
         
         self._K = K
+
         self._genders = np.linspace(0.0, 1.0, gender_division)
         self._ages = np.linspace(0.0, 1.0, age_division)
+
         self._obesity = np.linspace(0.0, 1.0, obesity_division)
+        self._heights = np.linspace(0.0, 1.0, heights_division)
+        self._muscularities = np.linspace(0.0, 1.0, muscularity_division)
+
         self._thorax_group = self._create_vertex_group_table(self._context, human, ['Thorax']).get('Thorax')      
 
     
@@ -90,12 +98,19 @@ class PCAAnalyzer():
         mesh = mesh.evaluated_get(depsgraph)
         return mesh
     
-    def _get_vertexgroup_coordinates(self, context: bpy.types.Context, mesh: bpy.types.Object, vgroup: VertexGroup, gender: float, age: float, obesity: float)->np.ndarray:
+    def _get_vertexgroup_coordinates(self, context: bpy.types.Context, mesh: bpy.types.Object, vgroup: VertexGroup, 
+                                     gender: float, age: float, 
+                                     obesity: float, height: float, muscularity: float)->np.ndarray:
         scene: bpy.types.Scene = context.scene
-        scene.mpfb_macropanel_weight = obesity
-        scene.mpfb_macropanel_age = age
+        
         scene.mpfb_macropanel_gender = gender
-        scene.mpfb_macropanel_muscle = 0.0
+        scene.mpfb_macropanel_age = age
+        
+        scene.mpfb_macropanel_weight = obesity
+        scene.mpfb_macropanel_height = height
+
+        scene.mpfb_macropanel_proportions = 0.5
+        scene.mpfb_macropanel_muscle = muscularity
 
         mesh_evaluated: bpy.types.Object = self._get_evaluated_mesh(context, mesh)
         vertices: np.ndarray = np.zeros((len(vgroup.vertices), 3))
@@ -140,16 +155,6 @@ class PCAAnalyzer():
             for face in group_faces:
                 vgroup.addFaceIndices(face.tolist())
 
-            # for v in mesh.data.vertices:
-            #     gids = [g.group for g in v.groups]
-            #     if(vg.index in gids):
-            #         weight = vg.weight(v.index)
-            #         if(weight > (1.0 - 1e-2)):
-            #             vgroup.addVertexIndex(v.index)
-            
-            # faces = getFaces(mesh, vgroup.vertices)
-            # for facevertices in faces:
-            #     vgroup.addFaceIndices(facevertices)
             table[vg.name] = vgroup
 
         return table
@@ -185,7 +190,8 @@ class PCAAnalyzer():
         return mu
     
     def evaluate(self)->None:
-        parameters_as_indices: list = [[i for i in range(a.shape[0])] for a in [self._genders, self._ages, self._obesity]]
+        parameters_as_indices: list = [[i for i in range(a.shape[0])] for a in [self._genders, self._ages, 
+                                                                                self._obesity, self._heights, self._muscularities]]
         combinations = np.array(np.meshgrid(*parameters_as_indices)).T.reshape(-1, len(parameters_as_indices))
         values: np.ndarray = np.zeros(combinations.shape)
         X: list = []
@@ -193,10 +199,14 @@ class PCAAnalyzer():
         values[:, 0] = self._genders[combinations[:, 0]]
         values[:, 1] = self._ages[combinations[:, 1]]
         values[:, 2] = self._obesity[combinations[:, 2]]
+        values[:, 3] = self._heights[combinations[:, 3]]
+        values[:, 4] = self._muscularities[combinations[:, 4]]
 
         thorax_group: VertexGroup = self._thorax_group#self._create_vertex_group_table(human, ['Thorax']).get('Thorax')
-        for gender, age, obesity in values:
-            vertices: np.ndarray = self._get_vertexgroup_coordinates(self._context, human, thorax_group, gender, age, obesity).flatten()
+        for (gender, age, obesity, height, muscularity) in values:
+            vertices: np.ndarray = self._get_vertexgroup_coordinates(self._context, human, thorax_group, 
+                                                                     gender, age, 
+                                                                     obesity, height, muscularity).flatten()
             X.append(vertices)
         
         if(self._K == -1):
