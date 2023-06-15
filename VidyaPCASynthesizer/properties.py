@@ -200,7 +200,7 @@ class VIDYAPCAFeatureData(bpy.types.PropertyGroup):
             F[i, 0] = slider.coefficient    
 
         P:np.ndarray = (M@F).flatten()
-
+        print('P MATRIX : ', P.shape)
         mk_mesh: bpy.types.Object = self._get_makehuman_mesh(context)
         pca_mesh: bpy.types.Object = context.view_layer.objects.get(self.mat_file_name)
 
@@ -211,7 +211,7 @@ class VIDYAPCAFeatureData(bpy.types.PropertyGroup):
             pca_slider.coefficient =  P[i]
             pca_slider.soft_update = False
 
-        pca_mesh.VIDYA_PCA_Data.update(context)
+        # pca_mesh.VIDYA_PCA_Data.update(context)
 
         # bpy.ops.object.select_all(action="DESELECT")
 
@@ -224,9 +224,9 @@ class VIDYAPCAFeatureData(bpy.types.PropertyGroup):
         # scene.mpfb_macropanel_muscle = F[4, 0]
         # scene.mpfb_macropanel_proportions = 0.5
         
-        # bpy.ops.object.select_all(action="DESELECT")
-        # pca_mesh.select_set(True)
-        # context.view_layer.objects.active = pca_mesh
+        bpy.ops.object.select_all(action="DESELECT")
+        pca_mesh.select_set(True)
+        context.view_layer.objects.active = pca_mesh
         
 
 def register():

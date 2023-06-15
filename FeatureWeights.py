@@ -4,7 +4,8 @@ import numpy as np
 import scipy.io as sio
 from sklearn.decomposition import PCA as sklearnPCA
 
-import jax.numpy as jnp
+from numpy.linalg import pinv
+# from jax.numpy.linalg import pinv
 
 '''
 The objective of this script is to find MF = P, given the PCA decomposition of multiple shapes (makehuman thoraxes).
@@ -18,11 +19,7 @@ Where,
 
 
 def getPCAWeights(mu: np.ndarray, vertices: np.ndarray, eigenvalues_mat: np.ndarray, eigenvectors_mat: np.ndarray)->np.ndarray:
-    # pinv = np.linalg.pinv
-    pinv = jnp.linalg.pinv
-
     S_sum: np.array = np.diag(np.array(vertices) - mu)
-
     lamuda_vectors: np.ndarray = eigenvectors_mat.T 
     lamuda: np.ndarray = np.diag(np.abs(eigenvalues_mat.flatten())**0.5)
     lamuda_product: np.ndarray = lamuda@lamuda_vectors
@@ -30,7 +27,6 @@ def getPCAWeights(mu: np.ndarray, vertices: np.ndarray, eigenvalues_mat: np.ndar
     W_inv: np.ndarray = lamuda_product@S_sum_inv
     W_full: np.ndarray = pinv(W_inv) 
     W: np.ndarray = np.sum(W_full, axis=0) 
-
     return W
 
 def getFPMatrix(mat)->np.ndarray:
@@ -50,7 +46,7 @@ def getFPMatrix(mat)->np.ndarray:
             W: np.ndarray = getPCAWeights(mu, vertices, eigenvalues_mat, eigenvectors_mat)
             P[i] = W
 
-    return F, P
+    return F, P.T
 
 
 if __name__ == '__main__':
@@ -58,13 +54,16 @@ if __name__ == '__main__':
     mat: dict = sio.loadmat(f'{mat_file}')
     
     F, P = getFPMatrix(mat)
-    F_inv = jnp.linalg.pinv(F)
-    # M = P@np.linalg.pinv(F)
-    M = P@F_inv
-    print(M.shape, F_inv.shape, P.shape)
+    F_pinv = pinv(F)
+    M = P@F_pinv
+    print(M.shape, F_pinv.shape, P.shape)
     mat['M'] = M
     mat['P'] = P
     mat['F'] = F
     mat['labels'] = ['gender', 'age', 'obesity', 'height', 'muscularity']
+    
+    # mat.pop('M')
+    # mat.pop('P')
+    # mat.pop('F')
     sio.savemat(f'{mat_file}', mat, format='4')#Format = 4 is important when saving jax arrays to mat files
     
