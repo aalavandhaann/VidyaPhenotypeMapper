@@ -114,7 +114,7 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
         mesh: bpy.types.Object = self._get_makehuman_mesh(context)
         if(mesh):
             mesh = self._get_evaluated_mesh(context, mesh)
-            vertexIds: list[int] = mat.get('vertexIds').flatten().tolist()
+            vertexIds: list[int] = mat.get('vertexIds').astype(int).flatten().tolist()
             for vid in vertexIds:
                 vertices_pointer.append(mesh.data.vertices[vid])
 
