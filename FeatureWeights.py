@@ -50,7 +50,7 @@ def getFPMatrix(mat)->np.ndarray:
             W: np.ndarray = getPCAWeights(mu, vertices, eigenvalues_mat, eigenvectors_mat)
             P[i] = W
 
-    return F, P.T
+    return F, P
 
 
 if __name__ == '__main__':
