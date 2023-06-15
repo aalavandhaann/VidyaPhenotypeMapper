@@ -65,7 +65,7 @@ class PT_2_VidyaPCASliders(bpy.types.Panel):
                           'sliders', mesh.VIDYA_PCA_Data, "slider_index", rows=3, maxrows=3, type="DEFAULT")
             
             row = box.row(align=True)
-            row.operator(VidyaPCAPredictor.bl_idname, text='Predict')
+            row.operator(VidyaPCAPredictor.bl_idname, text='SOLVE')
 
 class PT_3_VidyaFeatureSliders(bpy.types.Panel):
     bl_idname = "VIEW3D_PT_vidya_features_sliders_panel"

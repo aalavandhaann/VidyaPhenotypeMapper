@@ -1,4 +1,5 @@
 import bpy
+import time
 import pathlib
 import numpy as np
 from VidyaPCASynthesizer.utilities import get_cache_matrix, is_matrix_loaded, load_matrix_to_cache, get_cache_matrix_name
@@ -6,6 +7,9 @@ from VidyaPCASynthesizer.utilities import get_cache_matrix, is_matrix_loaded, lo
 from sklearn.linear_model import LogisticRegression
 from sklearn import preprocessing
 
+
+# from numpy.linalg import pinv
+from scipy.linalg import pinv
 
 def loadMATFile(self, context):
     bpy.ops.vidya.pcasynthesizer('EXEC_DEFAULT')
@@ -129,22 +133,27 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
         
         vertices = np.array(vertices).flatten()
 
+        start = time.time()
         S_sum: np.array = np.diag(vertices - mu)
         lamuda_vectors: np.ndarray = eigenvectors_mat.T 
         lamuda: np.ndarray = np.diag(np.abs(eigenvalues_mat.flatten())**0.5)
         lamuda_product: np.ndarray = lamuda@lamuda_vectors
 
-        S_sum_inv: np.ndarray = np.linalg.pinv(S_sum)
+        S_sum_inv: np.ndarray = pinv(S_sum)
 
-        W_inv: np.ndarray = lamuda_product@S_sum_inv
-# 
-        W_full: np.ndarray = np.linalg.pinv(W_inv) 
-
+        W_inv: np.ndarray = lamuda_product@S_sum_inv# 
+        W_full: np.ndarray = pinv(W_inv) 
         W: np.ndarray = np.sum(W_full, axis=0)    
-
+        end = time.time()
+        total_time = end - start
+        print(f'TOTAL TIME: {total_time}')
+        
         for i, slider in enumerate(self.sliders):
+            slider.soft_update = True
             slider.coefficient = W[i]
-
+            slider.soft_update = False
+            
+        self.update(context)
         print(f'MATRIX SHAPES: \nS: {S_sum.shape}\nsqroot(λ).Λ: {lamuda_product.shape}\ninv(S_sum): {S_sum_inv.shape}\nW^(-1): {W_inv.shape}\nW Full: {W_full.shape}\nW: {W.shape}')
         print(W)
 
@@ -211,17 +220,17 @@ class VIDYAPCAFeatureData(bpy.types.PropertyGroup):
             pca_slider.coefficient =  P[i]
             pca_slider.soft_update = False
 
-        # pca_mesh.VIDYA_PCA_Data.update(context)
+        pca_mesh.VIDYA_PCA_Data.update(context)
 
-        # bpy.ops.object.select_all(action="DESELECT")
+        bpy.ops.object.select_all(action="DESELECT")
 
-        # mk_mesh.select_set(True)
-        # context.view_layer.objects.active = mk_mesh
-        # scene.mpfb_macropanel_gender = F[0, 0]        
-        # scene.mpfb_macropanel_age = F[1, 0]
-        # scene.mpfb_macropanel_weight = F[2, 0]
-        # scene.mpfb_macropanel_height = F[3, 0]
-        # scene.mpfb_macropanel_muscle = F[4, 0]
+        mk_mesh.select_set(True)
+        context.view_layer.objects.active = mk_mesh
+        scene.mpfb_macropanel_gender = F[0, 0]        
+        scene.mpfb_macropanel_age = F[1, 0]
+        scene.mpfb_macropanel_weight = F[2, 0]
+        scene.mpfb_macropanel_height = F[3, 0]
+        scene.mpfb_macropanel_muscle = F[4, 0]
         # scene.mpfb_macropanel_proportions = 0.5
         
         bpy.ops.object.select_all(action="DESELECT")
