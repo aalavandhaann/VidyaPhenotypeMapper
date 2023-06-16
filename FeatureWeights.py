@@ -56,14 +56,16 @@ if __name__ == '__main__':
     F, P = getFPMatrix(mat)
     F_pinv = pinv(F)
     M = P@F_pinv
-    print(M.shape, F_pinv.shape, P.shape)
+    print(M.shape, F.shape, F_pinv.shape, P.shape)
+    
+    # M_T, _, _, _ = np.linalg.lstsq(F.T, P.T, rcond=None)
+    # M = M_T.T
+    
+    
     mat['M'] = M
     mat['P'] = P
     mat['F'] = F
     mat['labels'] = ['gender', 'age', 'obesity', 'height', 'muscularity']
     
-    # mat.pop('M')
-    # mat.pop('P')
-    # mat.pop('F')
     sio.savemat(f'{mat_file}', mat, format='4')#Format = 4 is important when saving jax arrays to mat files
     

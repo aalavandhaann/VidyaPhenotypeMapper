@@ -114,6 +114,8 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
         mu: np.ndarray = mat.get('mu').flatten()
         eigenvectors_mat: np.ndarray = mat.get('eigenvectors')
         eigenvalues_mat: np.ndarray = mat.get('eigenvalues')
+        
+        M:np.ndarray = mat.get('M', np.zeros((0, 0)))
 
         mesh: bpy.types.Object = self._get_makehuman_mesh(context)
         if(mesh):
@@ -154,8 +156,13 @@ class VIDYAPCAEigenData(bpy.types.PropertyGroup):
             slider.soft_update = False
             
         self.update(context)
+        if(M.shape[0]):
+            print(M.shape)
+            print(W.shape)
+            # F = W@pinv(M)
+            
+        
         print(f'MATRIX SHAPES: \nS: {S_sum.shape}\nsqroot(λ).Λ: {lamuda_product.shape}\ninv(S_sum): {S_sum_inv.shape}\nW^(-1): {W_inv.shape}\nW Full: {W_full.shape}\nW: {W.shape}')
-        print(W)
 
 class VIDYAPCAFeatureData(bpy.types.PropertyGroup):    
     mat_file_name: bpy.props.StringProperty(name='Matrix File Name', description="Name of the matrix file", default='//')
@@ -198,12 +205,11 @@ class VIDYAPCAFeatureData(bpy.types.PropertyGroup):
         import scipy.io as sio
         matt: dict = sio.loadmat(f'{pathlib.Path(self.mat_file_path)}')
 
-        F: np.ndarray = np.zeros((len(self.sliders)+1, 1))
         M: np.ndarray = mat.get('M')
+        F: np.ndarray = np.ones((M.shape[1], 1))
+        print(M.shape, F.shape)
         P_original: np.ndarray = mat.get('P')
         sliders: list[VIDYAFeatureSlider] = self.sliders
-
-        F[-1] = 1.0
         
         for i, slider in enumerate(sliders):            
             F[i, 0] = slider.coefficient    
